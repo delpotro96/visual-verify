@@ -14,6 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const endpointInput = document.getElementById("endpoint-input");
   const apiKeyGroup = document.getElementById("api-key-group");
   const apiKeyLabel = document.getElementById("api-key-label");
+  const toggleKeyVisibilityBtn = document.getElementById("toggle-key-visibility-btn");
   const modelSelectGroup = document.getElementById("model-select-group");
   const modelTextGroup = document.getElementById("model-text-group");
   const modelInputText = document.getElementById("model-input-text");
@@ -41,6 +42,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const simulationsContainer = document.getElementById("simulations-container");
   const runAllSimsBtn = document.getElementById("run-all-sims-btn");
   const exportIssuesBtn = document.getElementById("export-issues-btn");
+  const downloadReportBtn = document.getElementById("download-report-btn");
 
   // State
   let currentScreenshotUrl = "";
@@ -141,6 +143,16 @@ document.addEventListener("DOMContentLoaded", () => {
     handleProviderChange(providerSelect.value);
   });
 
+  if (toggleKeyVisibilityBtn) {
+    toggleKeyVisibilityBtn.addEventListener("click", () => {
+      const type = apiKeyInput.type === "password" ? "text" : "password";
+      apiKeyInput.type = type;
+      toggleKeyVisibilityBtn.textContent = type === "password" ? "👁️" : "🙈";
+      toggleKeyVisibilityBtn.setAttribute("aria-pressed", type === "text" ? "true" : "false");
+      toggleKeyVisibilityBtn.setAttribute("aria-label", type === "password" ? "Show API Key" : "Hide API Key");
+    });
+  }
+
   // 1. Load configuration from local storage
   chrome.storage.local.get([
     "geminiApiKey", "selectedModel", "selectedLanguage", "savedSpecs",
@@ -189,21 +201,7 @@ document.addEventListener("DOMContentLoaded", () => {
     chrome.tabs.query({ active: true, currentWindow: true }, ([activeTab]) => {
       if (activeTab) {
         currentTabId = activeTab.id;
-        tabStates[currentTabId] = {
-          specs: result.savedSpecs || "",
-          mockupBase64: "",
-          mockupMimeType: "",
-          mockupSrc: "",
-          results: [],
-          simulations: [],
-          screenshotUrl: "",
-          url: activeTab.url,
-          reportVisible: false,
-          simulationsVisible: false
-        };
-        if (result.savedSpecs && specInput) {
-          specInput.value = result.savedSpecs;
-        }
+        loadTabState(currentTabId);
       }
     });
   });
@@ -226,9 +224,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (open) {
       settingsPanel.classList.remove("hidden");
       settingsBtn.classList.add("active");
+      settingsBtn.setAttribute("aria-expanded", "true");
     } else {
       settingsPanel.classList.add("hidden");
       settingsBtn.classList.remove("active");
+      settingsBtn.setAttribute("aria-expanded", "false");
     }
   }
 
@@ -263,9 +263,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (isHidden) {
       previewContainer.classList.remove("hidden");
       togglePreviewBtn.textContent = "🖼️ Hide Captured Screenshot";
+      togglePreviewBtn.setAttribute("aria-expanded", "true");
     } else {
       previewContainer.classList.add("hidden");
       togglePreviewBtn.textContent = "🖼️ View Captured Screenshot";
+      togglePreviewBtn.setAttribute("aria-expanded", "false");
     }
   });
 
@@ -395,8 +397,17 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Reset layout
-    reportPanel.classList.add("hidden");
-    resultsContainer.innerHTML = "";
+    resultsContainer.innerHTML = Array.from({ length: 3 }).map(() => `
+      <div class="result-card skeleton">
+        <div class="skeleton-header">
+          <div class="skeleton-line title"></div>
+          <div class="skeleton-line status"></div>
+        </div>
+        <div class="skeleton-line desc"></div>
+        <div class="skeleton-line desc short"></div>
+      </div>
+    `).join("");
+    reportPanel.classList.remove("hidden");
     simulationsSection.classList.add("hidden");
     simulationsContainer.innerHTML = "";
     verifyBtn.disabled = true;
@@ -478,7 +489,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
     } catch (error) {
       console.error(error);
-      alert(`Audit failed: ${error.message}`);
+      // 인라인 에러 카드로 에러 표시 (alert 대신)
+      const effectiveLang = resolvedLanguage || (languageSelect ? languageSelect.value : 'en') || 'en';
+      const errorTitle = effectiveLang === 'ko' ? '검증 실패' : 'Audit Failed';
+      renderErrorCard(errorTitle, error.message, '');
       showStatus(`Error: ${error.message}`, "error");
     } finally {
       verifyBtn.disabled = false;
@@ -664,6 +678,15 @@ Return a JSON object with two fields:
 
   // 10. OpenAI & Ollama Multimodal Compatible API Call
   async function callOpenAICompatibleAPI(provider, apiKey, endpoint, model, specs, domData, liveScreenshotBase64, mockupBase64, mockupMimeType, targetLang) {
+    // 오프라인 상태 사전 체크
+    if (!navigator.onLine) {
+      const lang = resolvedLanguage || (languageSelect ? languageSelect.value : 'en') || 'en';
+      const offlineMsg = lang === 'ko'
+        ? '네트워크가 연결되어 있지 않습니다. 인터넷 연결을 확인 후 다시 시도해 주세요.'
+        : 'No network connection detected. Please check your internet and try again.';
+      throw new Error(offlineMsg);
+    }
+
     let url = endpoint ? endpoint.trim() : "";
     if (!url) {
       if (provider === "ollama") {
@@ -723,11 +746,32 @@ Return a JSON object with two fields:
       headers["Authorization"] = `Bearer ${apiKey}`;
     }
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: headers,
-      body: JSON.stringify(requestBody)
-    });
+    // AbortController를 사용한 30초 타임아웃 설정
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    let response;
+    try {
+      response = await fetch(url, {
+        method: "POST",
+        headers: headers,
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
+      });
+    } catch (fetchErr) {
+      clearTimeout(timeoutId);
+      // AbortError 감지 → 타임아웃 메시지
+      if (fetchErr.name === 'AbortError') {
+        const lang = resolvedLanguage || (languageSelect ? languageSelect.value : 'en') || 'en';
+        const timeoutMsg = lang === 'ko'
+          ? 'API 요청이 30초 내에 응답하지 않았습니다. 네트워크 상태를 확인하거나 잠시 후 다시 시도해 주세요.'
+          : 'API request timed out after 30 seconds. Please check your network or try again later.';
+        throw new Error(timeoutMsg);
+      }
+      throw fetchErr;
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -736,7 +780,10 @@ Return a JSON object with two fields:
         const errJson = JSON.parse(errorText);
         errorMsg = errJson.error?.message || errorMsg;
       } catch (e) {}
-      throw new Error(`API Error (${response.status}): ${errorMsg}`);
+      // HTTP 상태 코드별 사용자 친화적 가이드 매핑
+      const lang = resolvedLanguage || (languageSelect ? languageSelect.value : 'en') || 'en';
+      const guide = getErrorGuide(response.status, provider, lang);
+      throw new Error(guide || `API Error (${response.status}): ${errorMsg}`);
     }
 
     const responseData = await response.json();
@@ -752,6 +799,15 @@ Return a JSON object with two fields:
 
   // 11. Gemini Multimodal API Call (Supports multiple images)
   async function callGeminiAPI(apiKey, model, specs, domData, liveScreenshotBase64, mockupBase64, mockupMimeType, targetLang) {
+    // 오프라인 상태 사전 체크
+    if (!navigator.onLine) {
+      const lang = resolvedLanguage || (languageSelect ? languageSelect.value : 'en') || 'en';
+      const offlineMsg = lang === 'ko'
+        ? '네트워크가 연결되어 있지 않습니다. 인터넷 연결을 확인 후 다시 시도해 주세요.'
+        : 'No network connection detected. Please check your internet and try again.';
+      throw new Error(offlineMsg);
+    }
+
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     const promptText = buildPromptText(specs, domData, mockupBase64, targetLang);
@@ -788,18 +844,45 @@ Return a JSON object with two fields:
       }
     };
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(requestBody)
-    });
+    // AbortController를 사용한 30초 타임아웃 설정
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    let response;
+    try {
+      response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
+      });
+    } catch (fetchErr) {
+      clearTimeout(timeoutId);
+      // AbortError 감지 → 타임아웃 메시지
+      if (fetchErr.name === 'AbortError') {
+        const lang = resolvedLanguage || (languageSelect ? languageSelect.value : 'en') || 'en';
+        const timeoutMsg = lang === 'ko'
+          ? 'API 요청이 30초 내에 응답하지 않았습니다. 네트워크 상태를 확인하거나 잠시 후 다시 시도해 주세요.'
+          : 'API request timed out after 30 seconds. Please check your network or try again later.';
+        throw new Error(timeoutMsg);
+      }
+      throw fetchErr;
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
-      const errorData = await response.json();
-      const errorMsg = errorData.error?.message || response.statusText;
-      throw new Error(`Gemini API Error: ${errorMsg}`);
+      let errorMsg = response.statusText;
+      try {
+        const errorData = await response.json();
+        errorMsg = errorData.error?.message || errorMsg;
+      } catch (e) {}
+      // HTTP 상태 코드별 사용자 친화적 가이드 매핑
+      const lang = resolvedLanguage || (languageSelect ? languageSelect.value : 'en') || 'en';
+      const guide = getErrorGuide(response.status, 'gemini', lang);
+      throw new Error(guide || `Gemini API Error (${response.status}): ${errorMsg}`);
     }
 
     const responseData = await response.json();
@@ -918,6 +1001,10 @@ Return a JSON object with two fields:
             <div class="sim-log-header">${t.verificationLogs}</div>
             <div class="sim-logs-content" id="sim-logs-content-${test.id}"></div>
             <img class="sim-screenshot-thumb hidden" id="sim-thumb-${test.id}" alt="Simulated State Thumbnail">
+            <div class="sim-log-actions hidden" id="sim-actions-${test.id}">
+              <button class="sim-log-btn" id="sim-btn-copy-api-${test.id}" type="button">📋 Copy API Data</button>
+              <button class="sim-log-btn" id="sim-btn-save-api-${test.id}" type="button">💾 Save API Log</button>
+            </div>
           </div>
         `;
 
@@ -1042,12 +1129,65 @@ Return a JSON object with two fields:
 
       logsContent.innerHTML = logsHtml;
 
+      // Handle copy and save action buttons for simulation API data
+      const logActions = document.getElementById(`sim-actions-${test.id}`);
+      const copyApiBtn = document.getElementById(`sim-btn-copy-api-${test.id}`);
+      const saveApiBtn = document.getElementById(`sim-btn-save-api-${test.id}`);
+
+      if (logActions && test.validation.apiPath) {
+        const matchingLogs = result.networkLogs.filter(log => log.url.includes(test.validation.apiPath));
+        if (matchingLogs.length > 0) {
+          const targetLog = matchingLogs[matchingLogs.length - 1]; // get latest matching request
+          const apiDataText = JSON.stringify({
+            testName: test.name,
+            testId: test.id,
+            url: targetLog.url,
+            method: targetLog.method,
+            status: targetLog.status,
+            timestamp: targetLog.timestamp,
+            payload: targetLog.payload,
+            response: targetLog.response
+          }, null, 2);
+
+          logActions.classList.remove("hidden");
+
+          copyApiBtn.onclick = (e) => {
+            e.stopPropagation();
+            navigator.clipboard.writeText(apiDataText).then(() => {
+              const originalText = copyApiBtn.textContent;
+              copyApiBtn.textContent = resolvedLanguage === "ko" ? "✅ 복사 완료!" : "✅ Copied!";
+              setTimeout(() => { copyApiBtn.textContent = originalText; }, 1200);
+            });
+          };
+
+          saveApiBtn.onclick = (e) => {
+            e.stopPropagation();
+            const blob = new Blob([apiDataText], { type: "application/json;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `api_log_${test.id}_${new Date().getTime()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          };
+        } else {
+          logActions.classList.add("hidden");
+        }
+      } else if (logActions) {
+        logActions.classList.add("hidden");
+      }
+
     } catch (err) {
       console.error(err);
       card.className = "simulation-card fail";
       badge.className = "sim-badge fail";
       badge.textContent = t.error;
       logsContent.innerHTML = `<div class="sim-log-item error">❌ ${t.error}: ${escapeHTML(err.message)}</div>`;
+      
+      const logActions = document.getElementById(`sim-actions-${test.id}`);
+      if (logActions) logActions.classList.add("hidden");
     } finally {
       runBtn.disabled = false;
     }
@@ -1068,18 +1208,15 @@ Return a JSON object with two fields:
     runAllSimsBtn.disabled = false;
   });
 
-  // 11. Copy Report Issues (Markdown format) to Clipboard
-  exportIssuesBtn.addEventListener("click", async () => {
-    const t = TRANSLATIONS[resolvedLanguage] || TRANSLATIONS['en'];
+  // Helper: Build Markdown Report
+  async function buildReportMarkdown() {
     let markdown = `# 👁️‍🗨️ VisualVerify QA Issues Report\n`;
-    
     try {
       const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
       markdown += `**URL:** ${activeTab ? activeTab.url : "Unknown Webpage"}\n`;
     } catch (e) {
       markdown += `**URL:** Unknown Webpage\n`;
     }
-    
     markdown += `**Date:** ${new Date().toLocaleString()}\n\n`;
 
     // A. Baseline UI Failures
@@ -1122,7 +1259,13 @@ Return a JSON object with two fields:
     } else {
       markdown += `*No interactive validation simulations available for this page.*\n\n`;
     }
+    return markdown;
+  }
 
+  // 11. Copy Report Issues (Markdown format) to Clipboard
+  exportIssuesBtn.addEventListener("click", async () => {
+    const markdown = await buildReportMarkdown();
+    
     // Copy to clipboard
     navigator.clipboard.writeText(markdown).then(() => {
       const originalText = exportIssuesBtn.textContent;
@@ -1138,6 +1281,22 @@ Return a JSON object with two fields:
     });
   });
 
+  // 12. Save Report to File
+  if (downloadReportBtn) {
+    downloadReportBtn.addEventListener("click", async () => {
+      const markdown = await buildReportMarkdown();
+      const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `VisualVerify_Report_${new Date().toISOString().slice(0,10)}.md`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+  }
+
   // HTML sanitization helper
   function escapeHTML(str) {
     if (str === null || str === undefined) return "";
@@ -1150,10 +1309,81 @@ Return a JSON object with two fields:
       .replace(/'/g, "&#039;");
   }
 
-  // Save current UI state to the currentTabId state object
+  // HTTP 상태 코드별 사용자 친화적 에러 가이드 매핑
+  function getErrorGuide(status, provider, lang) {
+    // lang이 결정되지 않은 시점이면 languageSelect 값 참조 후 fallback 'en'
+    const effectiveLang = lang || (languageSelect ? languageSelect.value : 'en') || 'en';
+    const isKo = effectiveLang === 'ko';
+
+    const guides = {
+      400: isKo
+        ? '잘못된 요청입니다. 입력 내용을 확인해 주세요.'
+        : 'Bad request. Please check your input.',
+      401: isKo
+        ? 'API 키가 유효하지 않거나 만료되었습니다. 설정(⚙️)에서 API 키를 확인해 주세요.'
+        : 'API key is invalid or expired. Please check your API key in Settings (⚙️).',
+      403: isKo
+        ? '접근이 거부되었습니다. API 키 권한을 확인해 주세요.'
+        : 'Access denied. Please verify your API key permissions.',
+      429: isKo
+        ? 'API 호출 한도를 초과했습니다. 잠시 후(1~2분) 다시 시도해 주세요.'
+        : 'Rate limit exceeded. Please wait 1-2 minutes and try again.'
+    };
+
+    if (guides[status]) return guides[status];
+
+    // 500~599 서버 에러 범위
+    if (status >= 500 && status <= 599) {
+      return isKo
+        ? '서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.'
+        : 'Server error occurred. Please try again later.';
+    }
+
+    // 기타: 원래 에러 메시지를 반환하도록 null 리턴
+    return null;
+  }
+
+  // 인라인 에러 카드 렌더링 (alert 대체)
+  function renderErrorCard(title, detail, errorCode) {
+    const effectiveLang = resolvedLanguage || (languageSelect ? languageSelect.value : 'en') || 'en';
+    const isKo = effectiveLang === 'ko';
+    const retryLabel = isKo ? '🔄 다시 시도' : '🔄 Retry';
+
+    resultsContainer.innerHTML = '';
+    reportPanel.classList.remove('hidden');
+
+    const card = document.createElement('div');
+    card.className = 'error-card';
+    card.setAttribute('role', 'alert');
+
+    card.innerHTML = `
+      <div class="error-card-header">
+        <span aria-hidden="true">⚠️</span>
+        <span>${escapeHTML(title)}</span>
+      </div>
+      <div class="error-card-body">
+        ${escapeHTML(detail)}
+        ${errorCode ? ` <code>${escapeHTML(errorCode)}</code>` : ''}
+      </div>
+    `;
+
+    // 재시도 버튼 (접근성: 키보드 포커스 가능)
+    const retryBtn = document.createElement('button');
+    retryBtn.className = 'btn-retry';
+    retryBtn.textContent = retryLabel;
+    retryBtn.setAttribute('aria-label', isKo ? '검증 재시도' : 'Retry audit');
+    retryBtn.addEventListener('click', () => {
+      verifyBtn.click();
+    });
+    card.appendChild(retryBtn);
+
+    resultsContainer.appendChild(card);
+  }
+
+  // Save current UI state to the currentTabId state object and persistent local storage
   function saveCurrentTabState() {
     if (!currentTabId) return;
-    tabStates[currentTabId] = {
+    const state = {
       specs: specInput ? specInput.value : "",
       mockupBase64: uploadedMockupBase64,
       mockupMimeType: uploadedMockupMimeType,
@@ -1165,75 +1395,128 @@ Return a JSON object with two fields:
       reportVisible: reportPanel ? !reportPanel.classList.contains("hidden") : false,
       simulationsVisible: simulationsSection ? !simulationsSection.classList.contains("hidden") : false
     };
+    tabStates[currentTabId] = state;
+    chrome.storage.local.set({ [`tabState_${currentTabId}`]: state });
   }
 
   // Load state for a specific tabId and update the UI
   function loadTabState(tabId) {
-    const state = tabStates[tabId];
-    if (state) {
-      // Restore specifications
-      if (specInput) {
-        specInput.value = state.specs || "";
+    chrome.storage.local.get([`tabState_${tabId}`], (res) => {
+      const savedState = res[`tabState_${tabId}`];
+      if (savedState) {
+        tabStates[tabId] = savedState;
       }
       
-      // Restore mockup
-      uploadedMockupBase64 = state.mockupBase64 || "";
-      uploadedMockupMimeType = state.mockupMimeType || "";
-      if (mockupPreview) {
-        mockupPreview.src = state.mockupSrc || "";
-      }
-      if (uploadedMockupBase64) {
-        if (dropzoneText) dropzoneText.classList.add("hidden");
-        if (mockupPreviewContainer) mockupPreviewContainer.classList.remove("hidden");
-      } else {
-        if (mockupPreviewContainer) mockupPreviewContainer.classList.add("hidden");
-        if (dropzoneText) dropzoneText.classList.remove("hidden");
-      }
+      const state = tabStates[tabId];
+      if (state) {
+        // Restore specifications
+        if (specInput) {
+          specInput.value = state.specs || "";
+        }
+        
+        // Restore mockup
+        uploadedMockupBase64 = state.mockupBase64 || "";
+        uploadedMockupMimeType = state.mockupMimeType || "";
+        if (mockupPreview) {
+          mockupPreview.src = state.mockupSrc || "";
+        }
+        if (uploadedMockupBase64) {
+          if (dropzoneText) dropzoneText.classList.add("hidden");
+          if (mockupPreviewContainer) mockupPreviewContainer.classList.remove("hidden");
+        } else {
+          if (mockupPreviewContainer) mockupPreviewContainer.classList.add("hidden");
+          if (dropzoneText) dropzoneText.classList.remove("hidden");
+        }
 
-      // Restore results and simulation state variables
-      currentBaselineResults = state.results || [];
-      currentSimulationTests = state.simulations || [];
-      currentScreenshotUrl = state.screenshotUrl || "";
-      if (screenshotPreview) {
-        screenshotPreview.src = currentScreenshotUrl;
-      }
+        // Restore results and simulation state variables
+        currentBaselineResults = state.results || [];
+        currentSimulationTests = state.simulations || [];
+        currentScreenshotUrl = state.screenshotUrl || "";
+        if (screenshotPreview) {
+          screenshotPreview.src = currentScreenshotUrl;
+        }
 
-      // Restore UI elements
-      if (state.reportVisible) {
-        renderReport({
-          baselineResults: currentBaselineResults,
-          simulationTests: currentSimulationTests
-        });
-        if (reportPanel) reportPanel.classList.remove("hidden");
-        if (state.simulationsVisible && simulationsSection) {
-          simulationsSection.classList.remove("hidden");
+        // Restore UI elements
+        if (state.reportVisible) {
+          renderReport({
+            baselineResults: currentBaselineResults,
+            simulationTests: currentSimulationTests
+          });
+          if (reportPanel) reportPanel.classList.remove("hidden");
+          if (state.simulationsVisible && simulationsSection) {
+            simulationsSection.classList.remove("hidden");
+          }
+        } else {
+          if (reportPanel) reportPanel.classList.add("hidden");
+          if (resultsContainer) resultsContainer.innerHTML = "";
+          if (simulationsSection) simulationsSection.classList.add("hidden");
+          if (simulationsContainer) simulationsContainer.innerHTML = "";
         }
       } else {
+        // Clear UI for tab with no saved state
+        if (specInput) specInput.value = "";
+        uploadedMockupBase64 = "";
+        uploadedMockupMimeType = "";
+        if (mockupPreview) mockupPreview.src = "";
+        if (mockupPreviewContainer) mockupPreviewContainer.classList.add("hidden");
+        if (dropzoneText) dropzoneText.classList.remove("hidden");
+        currentBaselineResults = [];
+        currentSimulationTests = [];
+        currentScreenshotUrl = "";
+        if (screenshotPreview) screenshotPreview.src = "";
         if (reportPanel) reportPanel.classList.add("hidden");
         if (resultsContainer) resultsContainer.innerHTML = "";
         if (simulationsSection) simulationsSection.classList.add("hidden");
         if (simulationsContainer) simulationsContainer.innerHTML = "";
+        
+        // Initialize basic state structure
+        tabStates[tabId] = {
+          specs: "",
+          mockupBase64: "",
+          mockupMimeType: "",
+          mockupSrc: "",
+          results: [],
+          simulations: [],
+          screenshotUrl: "",
+          url: "",
+          reportVisible: false,
+          simulationsVisible: false
+        };
       }
-    } else {
-      // Clear UI for tab with no saved state
-      if (specInput) specInput.value = "";
-      uploadedMockupBase64 = "";
-      uploadedMockupMimeType = "";
-      if (mockupPreview) mockupPreview.src = "";
-      if (mockupPreviewContainer) mockupPreviewContainer.classList.add("hidden");
-      if (dropzoneText) dropzoneText.classList.remove("hidden");
-      currentBaselineResults = [];
-      currentSimulationTests = [];
-      currentScreenshotUrl = "";
-      if (screenshotPreview) screenshotPreview.src = "";
-      if (reportPanel) reportPanel.classList.add("hidden");
-      if (resultsContainer) resultsContainer.innerHTML = "";
-      if (simulationsSection) simulationsSection.classList.add("hidden");
-      if (simulationsContainer) simulationsContainer.innerHTML = "";
-    }
+    });
   }
 
-  // Listen for tab activation (switching tabs)
+  // Listen for window focus changes (switching browser windows)
+  chrome.windows.onFocusChanged.addListener((windowId) => {
+    if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+    chrome.tabs.query({ active: true, windowId: windowId }, ([activeTab]) => {
+      if (activeTab && activeTab.id !== currentTabId) {
+        // Save current active tab state before switching
+        saveCurrentTabState();
+        currentTabId = activeTab.id;
+        
+        // Initialize new tab state structure in memory if not exists
+        if (!tabStates[currentTabId]) {
+          tabStates[currentTabId] = {
+            specs: "",
+            mockupBase64: "",
+            mockupMimeType: "",
+            mockupSrc: "",
+            results: [],
+            simulations: [],
+            screenshotUrl: "",
+            url: activeTab.url || "",
+            reportVisible: false,
+            simulationsVisible: false
+          };
+        }
+        
+        loadTabState(currentTabId);
+      }
+    });
+  });
+
+  // Listen for tab activation (switching tabs in the same window)
   chrome.tabs.onActivated.addListener((activeInfo) => {
     // 1. Save state of the tab we are leaving
     saveCurrentTabState();
@@ -1265,50 +1548,32 @@ Return a JSON object with two fields:
 
   // Listen for tab URL updates (navigating to a new page in the active tab)
   chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.url) {
-      chrome.tabs.query({ active: true, currentWindow: true }, ([activeTab]) => {
-        if (activeTab && activeTab.id === tabId) {
-          const oldState = tabStates[tabId];
-          const newUrl = changeInfo.url;
-          
-          if (oldState && oldState.url) {
-            try {
-              const oldHost = new URL(oldState.url).hostname;
-              const newHost = new URL(newUrl).hostname;
-              if (oldHost !== newHost) {
-                // Different domain! Clear this tab's state.
-                delete tabStates[tabId];
-                if (tabId === currentTabId) {
-                  loadTabState(tabId);
-                }
-              } else {
-                // Same domain (refresh/hashchange/subpath). Update URL but keep state!
-                oldState.url = newUrl;
-              }
-            } catch (e) {
-              // URL parse error - reset
-              delete tabStates[tabId];
-              if (tabId === currentTabId) {
-                loadTabState(tabId);
-              }
-            }
-          } else {
-            // Initialize new state
-            tabStates[tabId] = {
-              specs: "",
-              mockupBase64: "",
-              mockupMimeType: "",
-              mockupSrc: "",
-              results: [],
-              simulations: [],
-              screenshotUrl: "",
-              url: newUrl,
-              reportVisible: false,
-              simulationsVisible: false
-            };
-          }
-        }
-      });
+    // Only care about the active tab updates to prevent background tabs from overwriting active state
+    if (tabId === currentTabId && changeInfo.url) {
+      const oldState = tabStates[tabId];
+      const newUrl = changeInfo.url;
+      
+      if (oldState) {
+        // Update URL but DO NOT clear/delete the specs or mockup results.
+        // We preserve specifications and baseline results for maximum UX convenience.
+        oldState.url = newUrl;
+        saveCurrentTabState();
+      } else {
+        // Initialize new state if completely empty
+        tabStates[tabId] = {
+          specs: "",
+          mockupBase64: "",
+          mockupMimeType: "",
+          mockupSrc: "",
+          results: [],
+          simulations: [],
+          screenshotUrl: "",
+          url: newUrl,
+          reportVisible: false,
+          simulationsVisible: false
+        };
+        saveCurrentTabState();
+      }
     }
   });
 });
