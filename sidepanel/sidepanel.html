@@ -22,9 +22,9 @@
 
     <!-- Settings Toggle -->
     <div class="accordion-item" id="settings-accordion">
-      <button class="accordion-trigger" id="settings-btn">
-        <span>⚙️ Configuration & Key</span>
-        <span class="arrow-icon">▼</span>
+      <button class="accordion-trigger" id="settings-btn" aria-expanded="false" aria-controls="settings-panel">
+        <span><span aria-hidden="true">⚙️</span> Configuration & Key</span>
+        <span class="arrow-icon" aria-hidden="true">▼</span>
       </button>
       <div class="accordion-content hidden" id="settings-panel">
         <div class="settings-card">
@@ -44,7 +44,10 @@
 
           <div class="form-group" id="api-key-group">
             <label for="api-key-input" id="api-key-label">Gemini API Key</label>
-            <input type="password" id="api-key-input" placeholder="AIzaSy..." autocomplete="off">
+            <div class="input-with-toggle">
+              <input type="password" id="api-key-input" placeholder="AIzaSy..." autocomplete="off">
+              <button type="button" class="btn-toggle-visibility" id="toggle-key-visibility-btn" aria-label="Show API Key" aria-pressed="false">👁️</button>
+            </div>
           </div>
 
           <div class="form-group" id="model-select-group">
@@ -86,12 +89,12 @@
         <div class="dropzone" id="dropzone">
           <input type="file" id="mockup-file-input" accept="image/*" style="display: none;">
           <div class="dropzone-text" id="dropzone-text">
-            <span>📁 Drag & Drop design here</span>
+            <span><span aria-hidden="true">📁</span> Drag & Drop design here</span>
             <p>or click to select file</p>
           </div>
           <div class="mockup-preview-container hidden" id="mockup-preview-container">
             <img id="mockup-preview" src="" alt="Mockup Preview">
-            <button class="btn-remove-mockup" id="btn-remove-mockup" type="button">✖ Remove Mockup</button>
+            <button class="btn-remove-mockup" id="btn-remove-mockup" type="button" aria-label="Remove Mockup"><span aria-hidden="true">✖</span> Remove Mockup</button>
           </div>
         </div>
       </section>
@@ -99,7 +102,7 @@
       <!-- Specifications Section -->
       <section class="spec-section">
         <div class="section-header">
-          <h2>📝 Verification Specifications (Optional)</h2>
+          <h2><span aria-hidden="true">📝</span> Verification Specifications (Optional)</h2>
         </div>
         <textarea id="spec-input" placeholder="Define functional rules to test. For example:
 - The title must contain the word 'Welcome'.
@@ -121,16 +124,17 @@
       <!-- Report Section -->
       <section class="report-section hidden" id="report-panel">
         <div class="section-header">
-          <h2>📊 Audit Report</h2>
+          <h2><span aria-hidden="true">📊</span> Audit Report</h2>
           <div style="display: flex; gap: 8px; align-items: center;">
             <button class="btn btn-secondary" id="export-issues-btn" style="padding: 4px 10px; font-size: 11px; height: auto; min-height: 0; display: flex; align-items: center; gap: 4px;">📋 Copy Issues (Markdown)</button>
+            <button class="btn btn-secondary" id="download-report-btn" style="padding: 4px 10px; font-size: 11px; height: auto; min-height: 0; display: flex; align-items: center; gap: 4px;">💾 Save Report</button>
             <span class="score-badge" id="report-score">0/0 Passed</span>
           </div>
         </div>
 
         <!-- Captured Image Preview (Thumbnail) -->
         <div class="preview-card">
-          <button class="preview-trigger" id="toggle-preview-btn">🖼️ View Captured Screenshot</button>
+          <button class="preview-trigger" id="toggle-preview-btn" aria-expanded="false" aria-controls="preview-container"><span aria-hidden="true">🖼️</span> View Captured Screenshot</button>
           <div class="preview-image-container hidden" id="preview-container">
             <img id="screenshot-preview" src="" alt="Page Screenshot Preview">
           </div>
@@ -145,7 +149,7 @@
         <div class="simulations-section hidden" id="simulations-section" style="margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 20px;">
           <div class="section-header" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
             <h2 style="font-size: 15px; font-weight: 600; color: var(--primary-accent); display: flex; align-items: center; gap: 6px; margin: 0;">
-              ⚡ Interactive Validation Tests (플러그인 직접 실행 검증)
+              <span aria-hidden="true">⚡</span> Interactive Validation Tests (플러그인 직접 실행 검증)
             </h2>
             <button class="btn btn-secondary" id="run-all-sims-btn" style="padding: 4px 10px; font-size: 11px; height: auto; min-height: 0;">Run All Tests</button>
           </div>
