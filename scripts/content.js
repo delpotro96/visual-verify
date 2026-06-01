@@ -9,21 +9,6 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       } catch (error) {
         sendResponse({ success: false, error: error.message });
       }
-    } else if (request.action === "runSimulation") {
-      try {
-        simulateValidationFlow();
-        // Wait 800ms for animations and network requests to complete, then return scraped DOM & network logs
-        setTimeout(() => {
-          try {
-            const data = extractDOMData();
-            sendResponse({ success: true, data: data });
-          } catch (innerErr) {
-            sendResponse({ success: false, error: innerErr.message });
-          }
-        }, 800);
-      } catch (error) {
-        sendResponse({ success: false, error: error.message });
-      }
     } else if (request.action === "runSimulationSteps") {
       executeSteps(request.steps, request.expectedWarningText)
         .then((result) => {
@@ -142,38 +127,7 @@ function extractDOMData() {
   return result;
 }
 
-/**
- * Automates form field injection with boundary-violating/invalid inputs
- * and triggers a programmatic click event on the submit button.
- */
-function simulateValidationFlow() {
-  const emailInput = document.querySelector('input[type="email"], input[name*="email" i], input[id*="email" i]');
-  const passwordInput = document.querySelector('input[type="password"], input[name*="password" i], input[id*="password" i]');
-  const userIdInput = document.querySelector('input[type="text"][id*="user" i], input[type="text"][name*="user" i], input[type="text"][id*="id" i]');
 
-  if (emailInput) {
-    emailInput.value = "invalid_email_format";
-    emailInput.dispatchEvent(new Event("input", { bubbles: true }));
-    emailInput.dispatchEvent(new Event("change", { bubbles: true }));
-  }
-  
-  if (passwordInput) {
-    passwordInput.value = "too_long_password_exceeding_16_characters_limit";
-    passwordInput.dispatchEvent(new Event("input", { bubbles: true }));
-    passwordInput.dispatchEvent(new Event("change", { bubbles: true }));
-  }
-
-  if (userIdInput) {
-    userIdInput.value = "user_id_too_long_exceeding_limit";
-    userIdInput.dispatchEvent(new Event("input", { bubbles: true }));
-    userIdInput.dispatchEvent(new Event("change", { bubbles: true }));
-  }
-
-  const submitBtn = document.querySelector('button[type="submit"], input[type="submit"], button#submitBtn, form button');
-  if (submitBtn) {
-    submitBtn.click();
-  }
-}
 
 /**
  * Executes dynamic, step-based simulation actions and returns the results.

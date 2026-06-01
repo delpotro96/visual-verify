@@ -516,25 +516,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // 8. OpenAI & Ollama Multimodal Compatible API Call
-  async function callOpenAICompatibleAPI(provider, apiKey, endpoint, model, specs, domData, liveScreenshotBase64, mockupBase64, mockupMimeType, targetLang) {
-    let url = endpoint ? endpoint.trim() : "";
-    if (!url) {
-      if (provider === "ollama") {
-        url = "http://localhost:11434";
-      } else {
-        throw new Error("API Endpoint URL is required for OpenAI-Compatible providers.");
-      }
-    }
-    
-    // Format URL correctly for Chat Completions API
-    if (!url.endsWith("/chat/completions")) {
-      if (url.endsWith("/")) url = url.slice(0, -1);
-      if (!url.endsWith("/v1") && provider === "ollama") {
-        url += "/v1";
-      }
-      url += "/chat/completions";
-    }
-
+  // 8. Shared Prompt Builder Helper
+  function buildPromptText(specs, domData, mockupBase64, targetLang) {
     const hasKorean = /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/.test(specs) || 
                       /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/.test(domData.title) || 
                       (domData.headings && domData.headings.some(h => /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/.test(h.text)));
@@ -562,12 +545,12 @@ LANGUAGE REQUIREMENT:
     let promptText = `
 You are an expert visual and functional Quality Assurance (QA) engineer.
 You are given:
-1. A webpage screenshot of the active view (sent in messages as an image).
+1. A webpage screenshot of the active view (Image 1).
 2. Extracted metadata of elements (DOM inputs, text limits, placeholder, buttons, headers) parsed as JSON.
 `;
 
     if (mockupBase64) {
-      promptText += `3. A design mockup image uploaded by the user (sent as the second image) which represents the target design intent.\n`;
+      promptText += `3. A design mockup image uploaded by the user (Image 2) which represents the target design intent.\n`;
     }
 
     if (specs) {
@@ -579,13 +562,13 @@ WEBPAGE DOM METADATA (JSON):
 ${JSON.stringify(domData, null, 2)}
 
 YOUR TASK:
-Audit the webpage (represented by the screenshot and the DOM JSON) to check for compliance.
+Audit the webpage (represented by Image 1 and the DOM JSON) to check for compliance.
 `;
 
     if (mockupBase64) {
       promptText += `
-- COMPARE the live webpage screenshot WITH the design mockup visually. Identify any visual discrepancies (layout positioning, spacing, alignment, logo placement, copywriting differences, input styles, fonts).
-- Audit whether the element values (like placeholders or buttons) in the DOM JSON match the design intent shown in the mockup image.
+- COMPARE the live webpage screenshot (Image 1) WITH the design mockup (Image 2) visually. Identify any visual discrepancies (layout positioning, spacing, alignment, logo placement, copywriting differences, input styles, fonts).
+- Audit whether the element values (like placeholders or buttons) in the DOM JSON match the design intent shown in Image 2.
 `;
     }
 
@@ -600,7 +583,7 @@ Audit the webpage (represented by the screenshot and the DOM JSON) to check for 
       promptText += `
 CRITICAL INSTRUCTION:
 Both a design mockup image AND text specifications were provided. You MUST audit BOTH.
-Compare the live screenshot with the design mockup and evaluate DOM constraints against the text specifications.
+Compare Image 1 with Image 2 and evaluate DOM constraints against the text specifications.
 `;
     }
 
@@ -636,6 +619,70 @@ Return a JSON object with two fields:
   ]
 }
 `;
+    return promptText;
+  }
+
+  // 9. Shared JSON Parser Helper
+  function parseJSONResponse(generatedText) {
+    const cleaned = generatedText.trim();
+    
+    // 1. Try direct parsing
+    try {
+      return JSON.parse(cleaned);
+    } catch (inner) {}
+
+    // 2. Try extracting JSON using markdown block matching
+    const mdRegex = /```(?:json)?\s*([\s\S]*?)\s*```/i;
+    const match = cleaned.match(mdRegex);
+    if (match && match[1]) {
+      try {
+        return JSON.parse(match[1].trim());
+      } catch (inner) {}
+    }
+
+    // 3. Try parsing text between first '[' and last ']' (array format)
+    const startIdx = cleaned.indexOf('[');
+    const endIdx = cleaned.lastIndexOf(']');
+    if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+      try {
+        return JSON.parse(cleaned.substring(startIdx, endIdx + 1));
+      } catch (inner) {}
+    }
+
+    // 4. Try parsing text between first '{' and last '}' (object format)
+    const startObjIdx = cleaned.indexOf('{');
+    const endObjIdx = cleaned.lastIndexOf('}');
+    if (startObjIdx !== -1 && endObjIdx !== -1 && endObjIdx > startObjIdx) {
+      try {
+        return JSON.parse(cleaned.substring(startObjIdx, endObjIdx + 1));
+      } catch (inner) {}
+    }
+
+    // If all failed, throw the original syntax error
+    return JSON.parse(cleaned);
+  }
+
+  // 10. OpenAI & Ollama Multimodal Compatible API Call
+  async function callOpenAICompatibleAPI(provider, apiKey, endpoint, model, specs, domData, liveScreenshotBase64, mockupBase64, mockupMimeType, targetLang) {
+    let url = endpoint ? endpoint.trim() : "";
+    if (!url) {
+      if (provider === "ollama") {
+        url = "http://localhost:11434";
+      } else {
+        throw new Error("API Endpoint URL is required for OpenAI-Compatible providers.");
+      }
+    }
+    
+    // Format URL correctly for Chat Completions API
+    if (!url.endsWith("/chat/completions")) {
+      if (url.endsWith("/")) url = url.slice(0, -1);
+      if (!url.endsWith("/v1") && provider === "ollama") {
+        url += "/v1";
+      }
+      url += "/chat/completions";
+    }
+
+    const promptText = buildPromptText(specs, domData, mockupBase64, targetLang);
 
     // Construct OpenAI messages payload (multimodal format)
     const contentParts = [
@@ -696,143 +743,18 @@ Return a JSON object with two fields:
     const generatedText = responseData.choices[0].message.content;
 
     try {
-      const cleaned = generatedText.trim();
-      try {
-        return JSON.parse(cleaned);
-      } catch (inner) {}
-
-      const mdRegex = /```(?:json)?\s*([\s\S]*?)\s*```/i;
-      const match = cleaned.match(mdRegex);
-      if (match && match[1]) {
-        try {
-          return JSON.parse(match[1].trim());
-        } catch (inner) {}
-      }
-
-      const startObjIdx = cleaned.indexOf('{');
-      const endObjIdx = cleaned.lastIndexOf('}');
-      if (startObjIdx !== -1 && endObjIdx !== -1 && endObjIdx > startObjIdx) {
-        try {
-          return JSON.parse(cleaned.substring(startObjIdx, endObjIdx + 1));
-        } catch (inner) {}
-      }
-
-      return JSON.parse(cleaned);
+      return parseJSONResponse(generatedText);
     } catch (e) {
       console.warn("Failed to parse response as JSON:", e, generatedText);
       throw new Error(`AI returned invalid JSON: ${e.message}`);
     }
   }
 
-  // 9. Gemini Multimodal API Call (Supports multiple images)
+  // 11. Gemini Multimodal API Call (Supports multiple images)
   async function callGeminiAPI(apiKey, model, specs, domData, liveScreenshotBase64, mockupBase64, mockupMimeType, targetLang) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-    // Detect if Korean characters exist in specifications, active tab title, or DOM headings (as fallback)
-    const hasKorean = /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/.test(specs) || 
-                      /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/.test(domData.title) || 
-                      (domData.headings && domData.headings.some(h => /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/.test(h.text)));
-
-    // Set explicit target language in prompt
-    let languageInstruction = "";
-    if (targetLang === "ko") {
-      languageInstruction = `
-LANGUAGE REQUIREMENT:
-- You MUST output all JSON text fields ("title", "description", "suggestions", "name") strictly in Korean (한국어). Do not use English for these fields.
-`;
-    } else if (targetLang === "en") {
-      languageInstruction = `
-LANGUAGE REQUIREMENT:
-- You MUST output all JSON text fields ("title", "description", "suggestions", "name") strictly in English. Do not use Korean for these fields.
-`;
-    } else {
-      languageInstruction = `
-LANGUAGE REQUIREMENT:
-- Detect the language of the specifications or mockup annotations.
-- If the specifications, mockup notations, or target webpage contains Korean (한국어) - or if the flag 'hasKorean' is true (which is ${hasKorean}) - you MUST output the fields "title", "description", "suggestions", and "name" strictly in Korean (한국어).
-- Otherwise, match the language of the input (typically English).
-`;
-    }
-
-    // Construct prompting guidelines based on provided inputs
-    let promptText = `
-You are an expert visual and functional Quality Assurance (QA) engineer.
-You are given:
-1. A webpage screenshot of the active view (Image 1).
-2. Extracted metadata of elements (DOM inputs, text limits, placeholder, buttons, headers) parsed as JSON.
-`;
-
-    if (mockupBase64) {
-      promptText += `3. A design mockup image uploaded by the user (Image 2) which represents the target design intent.\n`;
-    }
-
-    if (specs) {
-      promptText += `\nSPECIFICATIONS TO VERIFY:\n${specs}\n`;
-    }
-
-    promptText += `
-WEBPAGE DOM METADATA (JSON):
-${JSON.stringify(domData, null, 2)}
-
-YOUR TASK:
-Audit the webpage (represented by Image 1 and the DOM JSON) to check for compliance.
-`;
-
-    if (mockupBase64) {
-      promptText += `
-- COMPARE the live webpage screenshot (Image 1) WITH the design mockup (Image 2) visually. Identify any visual discrepancies (layout positioning, spacing, alignment, logo placement, copywriting differences, input styles, fonts).
-- Audit whether the element values (like placeholders or buttons) in the DOM JSON match the design intent shown in Image 2.
-`;
-    }
-
-    if (specs) {
-      promptText += `
-- Review whether the explicit text requirements listed under SPECIFICATIONS are met by the initial/static layout and static HTML properties.
-- Specifically check the DOM JSON constraints (e.g. check if inputs matching the rule have correct attributes like 'maxlength', 'required', 'pattern', or placeholder values).
-`;
-    }
-
-    // Force cross-evaluation instruction when both are present
-    if (mockupBase64 && specs) {
-      promptText += `
-CRITICAL INSTRUCTION:
-Both a design mockup image AND text specifications were provided. You MUST audit BOTH.
-Compare Image 1 with Image 2 and evaluate DOM constraints against the text specifications.
-`;
-    }
-
-    promptText += `
-${languageInstruction}
-
-You MUST respond strictly in JSON format matching the schema below. Do not wrap the JSON output in markdown block symbols.
-Return a JSON object with two fields:
-{
-  "baselineResults": [
-    {
-      "title": "Short title of the rule/visual element verified (e.g., 'Email Placeholder Check' or 'Header Alignment Check')",
-      "status": "pass" or "fail",
-      "description": "Clear explanation of what was verified, comparing the live site/DOM properties against the specifications/design mockup.",
-      "suggestions": "If failed, detailed HTML/CSS/JS instructions on how the developer can fix this discrepancy. If passed, write 'None'."
-    }
-  ],
-  "simulationTests": [
-    {
-      "id": "A unique slug ID (e.g. 'invalid_email_test')",
-      "name": "Short name of the test (e.g. 'Invalid Email API Test')",
-      "description": "Explains what inputs will be injected and what response/warning is verified.",
-      "steps": [
-        { "action": "fill", "selector": "CSS selector of the input field", "value": "the value to fill" },
-        { "action": "click", "selector": "CSS selector of the submit button" }
-      ],
-      "validation": {
-        "apiPath": "API endpoint substring expected to be called (e.g., '/api/register'), or empty string",
-        "statusCode": 400, // expected HTTP status code of the API call, or null
-        "domWarningText": "Expected error/warning text to appear on the screen, or empty string (e.g., 'Email must be from example.com')"
-      }
-    }
-  ]
-}
-`;
+    const promptText = buildPromptText(specs, domData, mockupBase64, targetLang);
 
     // Construct the parts array
     const parts = [
@@ -884,42 +806,7 @@ Return a JSON object with two fields:
     const generatedText = responseData.candidates[0].content.parts[0].text;
 
     try {
-      const cleaned = generatedText.trim();
-      
-      // 1. Try direct parsing
-      try {
-        return JSON.parse(cleaned);
-      } catch (inner) {}
-
-      // 2. Try extracting JSON using markdown block matching
-      const mdRegex = /```(?:json)?\s*([\s\S]*?)\s*```/i;
-      const match = cleaned.match(mdRegex);
-      if (match && match[1]) {
-        try {
-          return JSON.parse(match[1].trim());
-        } catch (inner) {}
-      }
-
-      // 3. Try parsing text between first '[' and last ']' (array format)
-      const startIdx = cleaned.indexOf('[');
-      const endIdx = cleaned.lastIndexOf(']');
-      if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
-        try {
-          return JSON.parse(cleaned.substring(startIdx, endIdx + 1));
-        } catch (inner) {}
-      }
-
-      // 4. Try parsing text between first '{' and last '}' (object format)
-      const startObjIdx = cleaned.indexOf('{');
-      const endObjIdx = cleaned.lastIndexOf('}');
-      if (startObjIdx !== -1 && endObjIdx !== -1 && endObjIdx > startObjIdx) {
-        try {
-          return JSON.parse(cleaned.substring(startObjIdx, endObjIdx + 1));
-        } catch (inner) {}
-      }
-
-      // If all failed, throw the original syntax error
-      return JSON.parse(cleaned);
+      return parseJSONResponse(generatedText);
     } catch (e) {
       console.warn("Failed to parse response as JSON:", e, generatedText);
       throw new Error(`AI returned invalid JSON: ${e.message}`);
