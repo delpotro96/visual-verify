@@ -5,6 +5,48 @@
   window.__visualVerifyInterceptorInitialized = true;
   window.__visualVerifyNetworkLogs = [];
 
+  // Helper to parse complex request bodies (FormData, URLSearchParams, JSON, binary)
+  function parseRequestBody(body) {
+    if (!body) return null;
+    try {
+      if (typeof body === "string") {
+        try {
+          return JSON.parse(body);
+        } catch (e) {
+          // Check if it's a URL-encoded query string
+          if (body.includes("=") && !body.includes("{")) {
+            const params = new URLSearchParams(body);
+            return Object.fromEntries(params.entries());
+          }
+          return body;
+        }
+      }
+      if (body instanceof URLSearchParams) {
+        return Object.fromEntries(body.entries());
+      }
+      if (body instanceof FormData) {
+        const data = {};
+        body.forEach((value, key) => {
+          if (value instanceof File) {
+            data[key] = `[File: ${value.name} (${value.size} bytes)]`;
+          } else {
+            data[key] = value;
+          }
+        });
+        return data;
+      }
+      if (body instanceof Blob) {
+        return `[Blob: ${body.type} (${body.size} bytes)]`;
+      }
+      if (body instanceof ArrayBuffer) {
+        return `[ArrayBuffer: (${body.byteLength} bytes)]`;
+      }
+      return String(body);
+    } catch (err) {
+      return "[Failed to Parse Payload]";
+    }
+  }
+
   // 1. Intercept Fetch API
   const originalFetch = window.fetch;
   window.fetch = async function(...args) {
@@ -20,15 +62,7 @@
     };
 
     if (options.body) {
-      try {
-        if (typeof options.body === "string") {
-          requestLog.payload = JSON.parse(options.body);
-        } else {
-          requestLog.payload = "[Non-JSON or Binary Body]";
-        }
-      } catch (e) {
-        requestLog.payload = String(options.body);
-      }
+      requestLog.payload = parseRequestBody(options.body);
     }
 
     try {
@@ -75,15 +109,7 @@
     const details = this.__visualVerifyRequestDetails;
     if (details) {
       if (body) {
-        try {
-          if (typeof body === "string") {
-            details.payload = JSON.parse(body);
-          } else {
-            details.payload = "[Non-JSON Body]";
-          }
-        } catch (e) {
-          details.payload = String(body);
-        }
+        details.payload = parseRequestBody(body);
       }
       
       this.addEventListener("load", function() {

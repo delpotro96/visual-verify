@@ -38,6 +38,27 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
 }
 
 /**
+ * Recursively queries elements including those hidden inside Shadow DOM.
+ */
+function queryElementsIncludingShadows(root, selectors) {
+  const elements = [];
+  
+  // Find all elements matching the selector inside the current root
+  const found = root.querySelectorAll(selectors);
+  found.forEach(el => elements.push(el));
+  
+  // Find all elements that have a shadowRoot
+  const allElements = root.querySelectorAll("*");
+  allElements.forEach(el => {
+    if (el.shadowRoot) {
+      elements.push(...queryElementsIncludingShadows(el.shadowRoot, selectors));
+    }
+  });
+  
+  return elements;
+}
+
+/**
  * Scrapes form elements, validation properties, and headings from the page.
  */
 function extractDOMData() {
@@ -58,8 +79,8 @@ function extractDOMData() {
     networkLogs: networkLogs
   };
 
-  // 1. Scrape inputs, textareas, and selects
-  const inputElements = document.querySelectorAll("input, textarea, select");
+  // 1. Scrape inputs, textareas, and selects including Shadow DOM
+  const inputElements = queryElementsIncludingShadows(document, "input, textarea, select");
   inputElements.forEach((el) => {
     if (el.type === "hidden") return; // Skip hidden inputs to keep JSON payload clean
 
@@ -94,8 +115,8 @@ function extractDOMData() {
     });
   });
 
-  // 2. Scrape buttons
-  const buttonElements = document.querySelectorAll("button, input[type='submit'], input[type='button']");
+  // 2. Scrape buttons including Shadow DOM
+  const buttonElements = queryElementsIncludingShadows(document, "button, input[type='submit'], input[type='button']");
   buttonElements.forEach((el) => {
     result.buttons.push({
       id: el.id || null,
@@ -106,8 +127,8 @@ function extractDOMData() {
     });
   });
 
-  // 3. Scrape visible headings (h1, h2, h3) for copywriting check
-  const headingElements = document.querySelectorAll("h1, h2, h3");
+  // 3. Scrape visible headings (h1, h2, h3) including Shadow DOM
+  const headingElements = queryElementsIncludingShadows(document, "h1, h2, h3");
   headingElements.forEach((el) => {
     const text = el.textContent.replace(/\s+/g, " ").trim();
     if (text) {
@@ -231,8 +252,8 @@ function searchWarningInDOM(text) {
     return true;
   }
 
-  // B. Check elements containing text or alerts
-  const elements = document.querySelectorAll("div, span, p, label, li, a, h1, h2, h3, h4, h5, h6");
+  // B. Check elements containing text or alerts, including those in Shadow DOM
+  const elements = queryElementsIncludingShadows(document, "div, span, p, label, li, a, h1, h2, h3, h4, h5, h6");
   for (const el of elements) {
     if (el.textContent && el.textContent.toLowerCase().includes(lowercaseText)) {
       // Check if it's visible

@@ -9,6 +9,15 @@ document.addEventListener("DOMContentLoaded", () => {
   const modelSelect = document.getElementById("model-select");
   const languageSelect = document.getElementById("language-select");
 
+  const providerSelect = document.getElementById("provider-select");
+  const endpointGroup = document.getElementById("endpoint-group");
+  const endpointInput = document.getElementById("endpoint-input");
+  const apiKeyGroup = document.getElementById("api-key-group");
+  const apiKeyLabel = document.getElementById("api-key-label");
+  const modelSelectGroup = document.getElementById("model-select-group");
+  const modelTextGroup = document.getElementById("model-text-group");
+  const modelInputText = document.getElementById("model-input-text");
+
   const dropzone = document.getElementById("dropzone");
   const mockupFileInput = document.getElementById("mockup-file-input");
   const dropzoneText = document.getElementById("dropzone-text");
@@ -92,11 +101,72 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
+  // Handle toggling of configurations based on the selected LLM Provider
+  function handleProviderChange(provider) {
+    if (provider === "gemini") {
+      endpointGroup.classList.add("hidden");
+      modelTextGroup.classList.add("hidden");
+      apiKeyGroup.classList.remove("hidden");
+      modelSelectGroup.classList.remove("hidden");
+      apiKeyLabel.textContent = "Gemini API Key";
+      apiKeyInput.placeholder = "AIzaSy...";
+    } else if (provider === "ollama") {
+      endpointGroup.classList.remove("hidden");
+      modelTextGroup.classList.remove("hidden");
+      apiKeyGroup.classList.add("hidden");
+      modelSelectGroup.classList.add("hidden");
+      if (!endpointInput.value.trim()) {
+        endpointInput.value = "http://localhost:11434";
+      }
+      if (!modelInputText.value.trim()) {
+        modelInputText.value = "llama3.2-vision";
+      }
+    } else if (provider === "openai") {
+      endpointGroup.classList.remove("hidden");
+      modelTextGroup.classList.remove("hidden");
+      apiKeyGroup.classList.remove("hidden");
+      modelSelectGroup.classList.add("hidden");
+      apiKeyLabel.textContent = "API Key / Token";
+      apiKeyInput.placeholder = "sk-...";
+      if (!endpointInput.value.trim()) {
+        endpointInput.value = "https://api.openai.com/v1";
+      }
+      if (!modelInputText.value.trim()) {
+        modelInputText.value = "gpt-4o";
+      }
+    }
+  }
+
+  providerSelect.addEventListener("change", () => {
+    handleProviderChange(providerSelect.value);
+  });
+
   // 1. Load configuration from local storage
-  chrome.storage.local.get(["geminiApiKey", "selectedModel", "selectedLanguage", "savedSpecs"], (result) => {
+  chrome.storage.local.get([
+    "geminiApiKey", "selectedModel", "selectedLanguage", "savedSpecs",
+    "aiProvider", "apiEndpoint", "customModel"
+  ], (result) => {
+    // Load AI Provider
+    if (result.aiProvider) {
+      providerSelect.value = result.aiProvider;
+    } else {
+      providerSelect.value = "gemini";
+    }
+
+    // Load Endpoint & custom model
+    if (result.apiEndpoint) {
+      endpointInput.value = result.apiEndpoint;
+    }
+    if (result.customModel) {
+      modelInputText.value = result.customModel;
+    }
+
+    // Setup fields visibility
+    handleProviderChange(providerSelect.value);
+
     if (result.geminiApiKey) {
       apiKeyInput.value = result.geminiApiKey;
-    } else {
+    } else if (providerSelect.value === "gemini") {
       // Auto-open settings if key is missing
       toggleSettings(true);
     }
@@ -167,7 +237,18 @@ document.addEventListener("DOMContentLoaded", () => {
     const key = apiKeyInput.value.trim();
     const model = modelSelect.value;
     const lang = languageSelect.value;
-    chrome.storage.local.set({ geminiApiKey: key, selectedModel: model, selectedLanguage: lang }, () => {
+    const provider = providerSelect.value;
+    const endpoint = endpointInput.value.trim();
+    const customModel = modelInputText.value.trim();
+
+    chrome.storage.local.set({
+      geminiApiKey: key,
+      selectedModel: model,
+      selectedLanguage: lang,
+      aiProvider: provider,
+      apiEndpoint: endpoint,
+      customModel: customModel
+    }, () => {
       showStatus("Configuration saved successfully!", "success");
       setTimeout(() => {
         toggleSettings(false);
@@ -276,15 +357,33 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 6. Verification Flow Trigger
   verifyBtn.addEventListener("click", async () => {
+    const provider = providerSelect.value;
     const apiKey = apiKeyInput.value.trim();
+    const endpoint = endpointInput.value.trim();
     const specs = specInput.value.trim();
-    const model = modelSelect.value;
+    
+    // Choose model based on provider
+    const model = provider === "gemini" ? modelSelect.value : modelInputText.value.trim();
     const lang = languageSelect.value;
 
-    if (!apiKey) {
+    if (provider === "gemini" && !apiKey) {
       alert("Please enter and save a Gemini API Key first!");
       toggleSettings(true);
       apiKeyInput.focus();
+      return;
+    }
+
+    if (provider === "openai" && !apiKey) {
+      alert("Please enter and save an API Key first!");
+      toggleSettings(true);
+      apiKeyInput.focus();
+      return;
+    }
+
+    if (provider !== "gemini" && !model) {
+      alert("Please enter a model name first!");
+      toggleSettings(true);
+      modelInputText.focus();
       return;
     }
 
@@ -360,10 +459,10 @@ document.addEventListener("DOMContentLoaded", () => {
       currentScreenshotUrl = screenshotDataUrl;
       screenshotPreview.src = screenshotDataUrl;
 
-      // D. Audit using Gemini
+      // D. Audit using LLM Interface
       showStatus("AI is auditing requirements (visual & functional)...");
       const base64LiveScreenshot = screenshotDataUrl.split(",")[1];
-      const auditResult = await callGeminiAPI(apiKey, model, specs, domData, base64LiveScreenshot, uploadedMockupBase64, uploadedMockupMimeType, lang);
+      const auditResult = await callLLMAPI(provider, apiKey, endpoint, model, specs, domData, base64LiveScreenshot, uploadedMockupBase64, uploadedMockupMimeType, lang);
 
       // E. Render Report
       renderReport(auditResult);
@@ -405,7 +504,227 @@ document.addEventListener("DOMContentLoaded", () => {
     statusBox.classList.add("hidden");
   }
 
-  // 7. Gemini Multimodal API Call (Supports multiple images)
+  // 7. Generalized LLM API Routing (Supports Gemini, Ollama, OpenAI)
+  async function callLLMAPI(provider, apiKey, endpoint, model, specs, domData, liveScreenshotBase64, mockupBase64, mockupMimeType, targetLang) {
+    if (provider === "gemini") {
+      return callGeminiAPI(apiKey, model, specs, domData, liveScreenshotBase64, mockupBase64, mockupMimeType, targetLang);
+    } else if (provider === "ollama" || provider === "openai") {
+      return callOpenAICompatibleAPI(provider, apiKey, endpoint, model, specs, domData, liveScreenshotBase64, mockupBase64, mockupMimeType, targetLang);
+    } else {
+      throw new Error(`Unsupported AI provider: ${provider}`);
+    }
+  }
+
+  // 8. OpenAI & Ollama Multimodal Compatible API Call
+  async function callOpenAICompatibleAPI(provider, apiKey, endpoint, model, specs, domData, liveScreenshotBase64, mockupBase64, mockupMimeType, targetLang) {
+    let url = endpoint ? endpoint.trim() : "";
+    if (!url) {
+      if (provider === "ollama") {
+        url = "http://localhost:11434";
+      } else {
+        throw new Error("API Endpoint URL is required for OpenAI-Compatible providers.");
+      }
+    }
+    
+    // Format URL correctly for Chat Completions API
+    if (!url.endsWith("/chat/completions")) {
+      if (url.endsWith("/")) url = url.slice(0, -1);
+      if (!url.endsWith("/v1") && provider === "ollama") {
+        url += "/v1";
+      }
+      url += "/chat/completions";
+    }
+
+    const hasKorean = /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/.test(specs) || 
+                      /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/.test(domData.title) || 
+                      (domData.headings && domData.headings.some(h => /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/.test(h.text)));
+
+    let languageInstruction = "";
+    if (targetLang === "ko") {
+      languageInstruction = `
+LANGUAGE REQUIREMENT:
+- You MUST output all JSON text fields ("title", "description", "suggestions", "name") strictly in Korean (한국어). Do not use English for these fields.
+`;
+    } else if (targetLang === "en") {
+      languageInstruction = `
+LANGUAGE REQUIREMENT:
+- You MUST output all JSON text fields ("title", "description", "suggestions", "name") strictly in English. Do not use Korean for these fields.
+`;
+    } else {
+      languageInstruction = `
+LANGUAGE REQUIREMENT:
+- Detect the language of the specifications or mockup annotations.
+- If the specifications, mockup notations, or target webpage contains Korean (한국어) - or if the flag 'hasKorean' is true (which is ${hasKorean}) - you MUST output the fields "title", "description", "suggestions", and "name" strictly in Korean (한국어).
+- Otherwise, match the language of the input (typically English).
+`;
+    }
+
+    let promptText = `
+You are an expert visual and functional Quality Assurance (QA) engineer.
+You are given:
+1. A webpage screenshot of the active view (sent in messages as an image).
+2. Extracted metadata of elements (DOM inputs, text limits, placeholder, buttons, headers) parsed as JSON.
+`;
+
+    if (mockupBase64) {
+      promptText += `3. A design mockup image uploaded by the user (sent as the second image) which represents the target design intent.\n`;
+    }
+
+    if (specs) {
+      promptText += `\nSPECIFICATIONS TO VERIFY:\n${specs}\n`;
+    }
+
+    promptText += `
+WEBPAGE DOM METADATA (JSON):
+${JSON.stringify(domData, null, 2)}
+
+YOUR TASK:
+Audit the webpage (represented by the screenshot and the DOM JSON) to check for compliance.
+`;
+
+    if (mockupBase64) {
+      promptText += `
+- COMPARE the live webpage screenshot WITH the design mockup visually. Identify any visual discrepancies (layout positioning, spacing, alignment, logo placement, copywriting differences, input styles, fonts).
+- Audit whether the element values (like placeholders or buttons) in the DOM JSON match the design intent shown in the mockup image.
+`;
+    }
+
+    if (specs) {
+      promptText += `
+- Review whether the explicit text requirements listed under SPECIFICATIONS are met by the initial/static layout and static HTML properties.
+- Specifically check the DOM JSON constraints (e.g. check if inputs matching the rule have correct attributes like 'maxlength', 'required', 'pattern', or placeholder values).
+`;
+    }
+
+    if (mockupBase64 && specs) {
+      promptText += `
+CRITICAL INSTRUCTION:
+Both a design mockup image AND text specifications were provided. You MUST audit BOTH.
+Compare the live screenshot with the design mockup and evaluate DOM constraints against the text specifications.
+`;
+    }
+
+    promptText += `
+${languageInstruction}
+
+You MUST respond strictly in JSON format matching the schema below. Do not wrap the JSON output in markdown block symbols.
+Return a JSON object with two fields:
+{
+  "baselineResults": [
+    {
+      "title": "Short title of the rule/visual element verified (e.g., 'Email Placeholder Check' or 'Header Alignment Check')",
+      "status": "pass" or "fail",
+      "description": "Clear explanation of what was verified, comparing the live site/DOM properties against the specifications/design mockup.",
+      "suggestions": "If failed, detailed HTML/CSS/JS instructions on how the developer can fix this discrepancy. If passed, write 'None'."
+    }
+  ],
+  "simulationTests": [
+    {
+      "id": "A unique slug ID (e.g. 'invalid_email_test')",
+      "name": "Short name of the test (e.g. 'Invalid Email API Test')",
+      "description": "Explains what inputs will be injected and what response/warning is verified.",
+      "steps": [
+        { "action": "fill", "selector": "CSS selector of the input field", "value": "the value to fill" },
+        { "action": "click", "selector": "CSS selector of the submit button" }
+      ],
+      "validation": {
+        "apiPath": "API endpoint substring expected to be called (e.g., '/api/register'), or empty string",
+        "statusCode": 400, // expected HTTP status code of the API call, or null
+        "domWarningText": "Expected error/warning text to appear on the screen, or empty string (e.g., 'Email must be from example.com')"
+      }
+    }
+  ]
+}
+`;
+
+    // Construct OpenAI messages payload (multimodal format)
+    const contentParts = [
+      { type: "text", text: promptText },
+      {
+        type: "image_url",
+        image_url: {
+          url: `data:image/png;base64,${liveScreenshotBase64}`
+        }
+      }
+    ];
+
+    if (mockupBase64) {
+      contentParts.push({
+        type: "image_url",
+        image_url: {
+          url: `data:${mockupMimeType || "image/png"};base64,${mockupBase64}`
+        }
+      });
+    }
+
+    const requestBody = {
+      model: model || (provider === "ollama" ? "llama3.2-vision" : "gpt-4o"),
+      messages: [
+        {
+          role: "user",
+          content: contentParts
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.1
+    };
+
+    const headers = {
+      "Content-Type": "application/json"
+    };
+    if (apiKey && provider === "openai") {
+      headers["Authorization"] = `Bearer ${apiKey}`;
+    }
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: headers,
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMsg = response.statusText;
+      try {
+        const errJson = JSON.parse(errorText);
+        errorMsg = errJson.error?.message || errorMsg;
+      } catch (e) {}
+      throw new Error(`API Error (${response.status}): ${errorMsg}`);
+    }
+
+    const responseData = await response.json();
+    const generatedText = responseData.choices[0].message.content;
+
+    try {
+      const cleaned = generatedText.trim();
+      try {
+        return JSON.parse(cleaned);
+      } catch (inner) {}
+
+      const mdRegex = /```(?:json)?\s*([\s\S]*?)\s*```/i;
+      const match = cleaned.match(mdRegex);
+      if (match && match[1]) {
+        try {
+          return JSON.parse(match[1].trim());
+        } catch (inner) {}
+      }
+
+      const startObjIdx = cleaned.indexOf('{');
+      const endObjIdx = cleaned.lastIndexOf('}');
+      if (startObjIdx !== -1 && endObjIdx !== -1 && endObjIdx > startObjIdx) {
+        try {
+          return JSON.parse(cleaned.substring(startObjIdx, endObjIdx + 1));
+        } catch (inner) {}
+      }
+
+      return JSON.parse(cleaned);
+    } catch (e) {
+      console.warn("Failed to parse response as JSON:", e, generatedText);
+      throw new Error(`AI returned invalid JSON: ${e.message}`);
+    }
+  }
+
+  // 9. Gemini Multimodal API Call (Supports multiple images)
   async function callGeminiAPI(apiKey, model, specs, domData, liveScreenshotBase64, mockupBase64, mockupMimeType, targetLang) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
