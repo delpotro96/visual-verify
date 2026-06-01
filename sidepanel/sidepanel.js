@@ -41,6 +41,10 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentBaselineResults = [];
   let resolvedLanguage = "en";
 
+  // Tab-specific state persistence
+  const tabStates = {}; // Keyed by tabId: { specs, mockupBase64, mockupMimeType, mockupSrc, results, simulations, screenshotUrl, url, reportVisible, simulationsVisible }
+  let currentTabId = null;
+
   const TRANSLATIONS = {
     ko: {
       verificationLogs: "검증 로그",
@@ -110,6 +114,36 @@ document.addEventListener("DOMContentLoaded", () => {
     } else {
       languageSelect.value = "auto";
     }
+
+    // Initialize currentTabId and tabStates
+    chrome.tabs.query({ active: true, currentWindow: true }, ([activeTab]) => {
+      if (activeTab) {
+        currentTabId = activeTab.id;
+        tabStates[currentTabId] = {
+          specs: result.savedSpecs || "",
+          mockupBase64: "",
+          mockupMimeType: "",
+          mockupSrc: "",
+          results: [],
+          simulations: [],
+          screenshotUrl: "",
+          url: activeTab.url,
+          reportVisible: false,
+          simulationsVisible: false
+        };
+        if (result.savedSpecs && specInput) {
+          specInput.value = result.savedSpecs;
+        }
+      }
+    });
+  });
+
+  // Track specifications input changes and update active tab state
+  specInput.addEventListener("input", () => {
+    if (currentTabId && tabStates[currentTabId]) {
+      tabStates[currentTabId].specs = specInput.value;
+    }
+    chrome.storage.local.set({ savedSpecs: specInput.value });
   });
 
   // 2. Settings Accordion Toggle
@@ -210,6 +244,13 @@ document.addEventListener("DOMContentLoaded", () => {
       // Update UI preview
       dropzoneText.classList.add("hidden");
       mockupPreviewContainer.classList.remove("hidden");
+
+      // Update tabState
+      if (currentTabId && tabStates[currentTabId]) {
+        tabStates[currentTabId].mockupBase64 = uploadedMockupBase64;
+        tabStates[currentTabId].mockupMimeType = uploadedMockupMimeType;
+        tabStates[currentTabId].mockupSrc = dataUrl;
+      }
     };
     reader.readAsDataURL(file);
   }
@@ -224,6 +265,13 @@ document.addEventListener("DOMContentLoaded", () => {
     // Reset UI
     mockupPreviewContainer.classList.add("hidden");
     dropzoneText.classList.remove("hidden");
+
+    // Update tabState
+    if (currentTabId && tabStates[currentTabId]) {
+      tabStates[currentTabId].mockupBase64 = "";
+      tabStates[currentTabId].mockupMimeType = "";
+      tabStates[currentTabId].mockupSrc = "";
+    }
   });
 
   // 6. Verification Flow Trigger
@@ -319,6 +367,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // E. Render Report
       renderReport(auditResult);
+
+      // Save to tabState
+      if (currentTabId && tabStates[currentTabId]) {
+        tabStates[currentTabId].results = currentBaselineResults;
+        tabStates[currentTabId].simulations = currentSimulationTests;
+        tabStates[currentTabId].screenshotUrl = currentScreenshotUrl;
+        tabStates[currentTabId].reportVisible = true;
+        tabStates[currentTabId].simulationsVisible = currentSimulationTests.length > 0;
+      }
 
     } catch (error) {
       console.error(error);
@@ -887,9 +944,117 @@ Return a JSON object with two fields:
       .replace(/'/g, "&#039;");
   }
 
+  // Save current UI state to the currentTabId state object
+  function saveCurrentTabState() {
+    if (!currentTabId) return;
+    tabStates[currentTabId] = {
+      specs: specInput ? specInput.value : "",
+      mockupBase64: uploadedMockupBase64,
+      mockupMimeType: uploadedMockupMimeType,
+      mockupSrc: mockupPreview ? mockupPreview.src : "",
+      results: currentBaselineResults,
+      simulations: currentSimulationTests,
+      screenshotUrl: currentScreenshotUrl,
+      url: tabStates[currentTabId]?.url || "",
+      reportVisible: reportPanel ? !reportPanel.classList.contains("hidden") : false,
+      simulationsVisible: simulationsSection ? !simulationsSection.classList.contains("hidden") : false
+    };
+  }
+
+  // Load state for a specific tabId and update the UI
+  function loadTabState(tabId) {
+    const state = tabStates[tabId];
+    if (state) {
+      // Restore specifications
+      if (specInput) {
+        specInput.value = state.specs || "";
+      }
+      
+      // Restore mockup
+      uploadedMockupBase64 = state.mockupBase64 || "";
+      uploadedMockupMimeType = state.mockupMimeType || "";
+      if (mockupPreview) {
+        mockupPreview.src = state.mockupSrc || "";
+      }
+      if (uploadedMockupBase64) {
+        if (dropzoneText) dropzoneText.classList.add("hidden");
+        if (mockupPreviewContainer) mockupPreviewContainer.classList.remove("hidden");
+      } else {
+        if (mockupPreviewContainer) mockupPreviewContainer.classList.add("hidden");
+        if (dropzoneText) dropzoneText.classList.remove("hidden");
+      }
+
+      // Restore results and simulation state variables
+      currentBaselineResults = state.results || [];
+      currentSimulationTests = state.simulations || [];
+      currentScreenshotUrl = state.screenshotUrl || "";
+      if (screenshotPreview) {
+        screenshotPreview.src = currentScreenshotUrl;
+      }
+
+      // Restore UI elements
+      if (state.reportVisible) {
+        renderReport({
+          baselineResults: currentBaselineResults,
+          simulationTests: currentSimulationTests
+        });
+        if (reportPanel) reportPanel.classList.remove("hidden");
+        if (state.simulationsVisible && simulationsSection) {
+          simulationsSection.classList.remove("hidden");
+        }
+      } else {
+        if (reportPanel) reportPanel.classList.add("hidden");
+        if (resultsContainer) resultsContainer.innerHTML = "";
+        if (simulationsSection) simulationsSection.classList.add("hidden");
+        if (simulationsContainer) simulationsContainer.innerHTML = "";
+      }
+    } else {
+      // Clear UI for tab with no saved state
+      if (specInput) specInput.value = "";
+      uploadedMockupBase64 = "";
+      uploadedMockupMimeType = "";
+      if (mockupPreview) mockupPreview.src = "";
+      if (mockupPreviewContainer) mockupPreviewContainer.classList.add("hidden");
+      if (dropzoneText) dropzoneText.classList.remove("hidden");
+      currentBaselineResults = [];
+      currentSimulationTests = [];
+      currentScreenshotUrl = "";
+      if (screenshotPreview) screenshotPreview.src = "";
+      if (reportPanel) reportPanel.classList.add("hidden");
+      if (resultsContainer) resultsContainer.innerHTML = "";
+      if (simulationsSection) simulationsSection.classList.add("hidden");
+      if (simulationsContainer) simulationsContainer.innerHTML = "";
+    }
+  }
+
   // Listen for tab activation (switching tabs)
-  chrome.tabs.onActivated.addListener(() => {
-    resetSessionData();
+  chrome.tabs.onActivated.addListener((activeInfo) => {
+    // 1. Save state of the tab we are leaving
+    saveCurrentTabState();
+    
+    // 2. Switch current tab ID
+    currentTabId = activeInfo.tabId;
+    
+    // 3. Load state of the new tab
+    if (!tabStates[currentTabId]) {
+      chrome.tabs.get(currentTabId, (tab) => {
+        tabStates[currentTabId] = {
+          specs: "",
+          mockupBase64: "",
+          mockupMimeType: "",
+          mockupSrc: "",
+          results: [],
+          simulations: [],
+          screenshotUrl: "",
+          url: tab ? tab.url : "",
+          reportVisible: false,
+          simulationsVisible: false
+        };
+        loadTabState(currentTabId);
+      });
+    } else {
+      loadTabState(currentTabId);
+    }
   });
 
   // Listen for tab URL updates (navigating to a new page in the active tab)
@@ -897,39 +1062,47 @@ Return a JSON object with two fields:
     if (changeInfo.url) {
       chrome.tabs.query({ active: true, currentWindow: true }, ([activeTab]) => {
         if (activeTab && activeTab.id === tabId) {
-          resetSessionData();
+          const oldState = tabStates[tabId];
+          const newUrl = changeInfo.url;
+          
+          if (oldState && oldState.url) {
+            try {
+              const oldHost = new URL(oldState.url).hostname;
+              const newHost = new URL(newUrl).hostname;
+              if (oldHost !== newHost) {
+                // Different domain! Clear this tab's state.
+                delete tabStates[tabId];
+                if (tabId === currentTabId) {
+                  loadTabState(tabId);
+                }
+              } else {
+                // Same domain (refresh/hashchange/subpath). Update URL but keep state!
+                oldState.url = newUrl;
+              }
+            } catch (e) {
+              // URL parse error - reset
+              delete tabStates[tabId];
+              if (tabId === currentTabId) {
+                loadTabState(tabId);
+              }
+            }
+          } else {
+            // Initialize new state
+            tabStates[tabId] = {
+              specs: "",
+              mockupBase64: "",
+              mockupMimeType: "",
+              mockupSrc: "",
+              results: [],
+              simulations: [],
+              screenshotUrl: "",
+              url: newUrl,
+              reportVisible: false,
+              simulationsVisible: false
+            };
+          }
         }
       });
     }
   });
-
-  /**
-   * Resets active specs and clears the report UI when moving to another page/tab.
-   */
-  function resetSessionData() {
-    // 1. Clear specifications textarea
-    if (specInput) {
-      specInput.value = "";
-    }
-    // 2. Hide and clear QA Report
-    if (reportPanel) {
-      reportPanel.classList.add("hidden");
-    }
-    if (resultsContainer) {
-      resultsContainer.innerHTML = "";
-    }
-    if (simulationsContainer) {
-      simulationsContainer.innerHTML = "";
-    }
-    if (simulationsSection) {
-      simulationsSection.classList.add("hidden");
-    }
-    // 3. Reset state
-    currentBaselineResults = [];
-    currentSimulationTests = [];
-    currentScreenshotUrl = "";
-    
-    // Clear storage history for specifications
-    chrome.storage.local.remove("savedSpecs");
-  }
 });
