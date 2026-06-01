@@ -4,7 +4,7 @@
 
 ---
 
-# 🇺🇸 English Guide
+# 🌐 English Guide
 
 `VisualVerify` is a premium Chrome Extension (Manifest V3) that leverages the Google Gemini Vision API to comprehensively and automatically audit a webpage's visual layout match, HTML attributes (Static UI), and backend API validation and warning messages (Dynamic Behavior).
 
@@ -64,7 +64,7 @@ This extension can be loaded locally using developer mode:
 
 ---
 
-# 🇰🇷 한국어 설명
+# 📘 한국어 설명
 
 `VisualVerify`는 Google Gemini Vision API를 활용하여 웹페이지의 시각적 디자인 매칭 상태, HTML 속성(Static UI), 그리고 백엔드 API 유효성 및 경고문 노출(Dynamic Behavior)을 종합적으로 자동 검사하는 프리미엄 크롬 확장 프로그램(Manifest V3)입니다.
 
