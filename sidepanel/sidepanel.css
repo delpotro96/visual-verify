@@ -212,6 +212,29 @@ textarea:focus {
   margin-top: 4px;
 }
 
+/* API key label row with "Get API key" link */
+.label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+.label-row label {
+  margin-bottom: 0;
+}
+.get-key-link {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary-accent);
+  text-decoration: none;
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+.get-key-link:hover {
+  text-decoration: underline;
+}
+
 /* Buttons */
 .btn {
   font-family: var(--font-family);

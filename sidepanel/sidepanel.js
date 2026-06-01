@@ -14,6 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const endpointInput = document.getElementById("endpoint-input");
   const apiKeyGroup = document.getElementById("api-key-group");
   const apiKeyLabel = document.getElementById("api-key-label");
+  const getKeyLink = document.getElementById("get-key-link");
   const toggleKeyVisibilityBtn = document.getElementById("toggle-key-visibility-btn");
   const modelSelectGroup = document.getElementById("model-select-group");
   const modelTextGroup = document.getElementById("model-text-group");
@@ -112,11 +113,13 @@ document.addEventListener("DOMContentLoaded", () => {
       modelSelectGroup.classList.remove("hidden");
       apiKeyLabel.textContent = "Gemini API Key";
       apiKeyInput.placeholder = "AIzaSy...";
+      if (getKeyLink) getKeyLink.classList.remove("hidden");
     } else if (provider === "ollama") {
       endpointGroup.classList.remove("hidden");
       modelTextGroup.classList.remove("hidden");
       apiKeyGroup.classList.add("hidden");
       modelSelectGroup.classList.add("hidden");
+      if (getKeyLink) getKeyLink.classList.add("hidden");
       if (!endpointInput.value.trim()) {
         endpointInput.value = "http://localhost:11434";
       }
@@ -130,6 +133,7 @@ document.addEventListener("DOMContentLoaded", () => {
       modelSelectGroup.classList.add("hidden");
       apiKeyLabel.textContent = "API Key / Token";
       apiKeyInput.placeholder = "sk-...";
+      if (getKeyLink) getKeyLink.classList.add("hidden");
       if (!endpointInput.value.trim()) {
         endpointInput.value = "https://api.openai.com/v1";
       }
@@ -1084,7 +1088,7 @@ Return a JSON object with two fields:
           
           if (statusMatch) {
             logsHtml += `<div class="sim-log-item request">${t.apiCallDetected} <code>${escapeHTML(log.method)} ${escapeHTML(log.url)}</code></div>`;
-            logsHtml += `<div class="sim-log-item response">${t.apiStatusMatches} <code>${log.status}</code></div>`;
+            logsHtml += `<div class="sim-log-item response">${t.apiStatusMatches} <code>${escapeHTML(log.status)}</code></div>`;
             if (log.payload) {
               logsHtml += `<div class="sim-log-item text-muted">${t.payload}: <code>${escapeHTML(JSON.stringify(log.payload))}</code></div>`;
             }
@@ -1094,12 +1098,12 @@ Return a JSON object with two fields:
           } else {
             pass = false;
             logsHtml += `<div class="sim-log-item request">⚠️ ${t.apiCallDetected} <code>${escapeHTML(log.method)} ${escapeHTML(log.url)}</code></div>`;
-            const errorText = t.apiStatusMismatch.replace("{expected}", test.validation.statusCode).replace("{actual}", log.status);
+            const errorText = t.apiStatusMismatch.replace("{expected}", escapeHTML(test.validation.statusCode)).replace("{actual}", escapeHTML(log.status));
             logsHtml += `<div class="sim-log-item error">${errorText}</div>`;
           }
         } else {
           pass = false;
-          const missingText = t.apiCallMissing.replace("{path}", test.validation.apiPath);
+          const missingText = t.apiCallMissing.replace("{path}", escapeHTML(test.validation.apiPath));
           logsHtml += `<div class="sim-log-item error">${missingText}</div>`;
         }
       }
@@ -1107,11 +1111,11 @@ Return a JSON object with two fields:
       // Validate DOM Warning message if expected
       if (test.validation.domWarningText) {
         if (result.warningTextFound) {
-          const textFound = t.warningTextFound.replace("{text}", test.validation.domWarningText);
+          const textFound = t.warningTextFound.replace("{text}", escapeHTML(test.validation.domWarningText));
           logsHtml += `<div class="sim-log-item response">${textFound}</div>`;
         } else {
           pass = false;
-          const textMissing = t.warningTextMissing.replace("{text}", test.validation.domWarningText);
+          const textMissing = t.warningTextMissing.replace("{text}", escapeHTML(test.validation.domWarningText));
           logsHtml += `<div class="sim-log-item error">${textMissing}</div>`;
         }
       }
@@ -1576,4 +1580,32 @@ Return a JSON object with two fields:
       }
     }
   });
+
+  // Clean up persisted state when a tab is closed so tabState_ keys don't
+  // accumulate forever (tab ids are ephemeral and never reused).
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    delete tabStates[tabId];
+    chrome.storage.local.remove(`tabState_${tabId}`);
+  });
+
+  // On startup, drop persisted state for tabs that no longer exist. Without this,
+  // tabState_<id> entries (which include full base64 screenshots/mockups) would
+  // grow unbounded across sessions and eventually exhaust the storage.local quota.
+  function pruneOrphanedTabStates() {
+    chrome.tabs.query({}, (tabs) => {
+      const liveKeys = new Set(tabs.map((tab) => `tabState_${tab.id}`));
+      chrome.storage.local.get(null, (all) => {
+        const stale = Object.keys(all).filter(
+          (key) => key.startsWith("tabState_") && !liveKeys.has(key)
+        );
+        if (stale.length === 0) return;
+        chrome.storage.local.remove(stale);
+        stale.forEach((key) => {
+          const id = Number(key.slice("tabState_".length));
+          if (!Number.isNaN(id)) delete tabStates[id];
+        });
+      });
+    });
+  }
+  pruneOrphanedTabStates();
 });

@@ -43,7 +43,10 @@
           </div>
 
           <div class="form-group" id="api-key-group">
-            <label for="api-key-input" id="api-key-label">Gemini API Key</label>
+            <div class="label-row">
+              <label for="api-key-input" id="api-key-label">Gemini API Key</label>
+              <a href="https://aistudio.google.com/app/apikey" id="get-key-link" class="get-key-link" target="_blank" rel="noopener noreferrer">Get API key <span aria-hidden="true">↗</span></a>
+            </div>
             <div class="input-with-toggle">
               <input type="password" id="api-key-input" placeholder="AIzaSy..." autocomplete="off">
               <button type="button" class="btn-toggle-visibility" id="toggle-key-visibility-btn" aria-label="Show API Key" aria-pressed="false">👁️</button>
