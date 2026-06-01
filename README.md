@@ -142,5 +142,3 @@ VisualVerify/
     ├── test_page.html    # Sandbox page containing mock backend and error binding
     └── test_headless.js  # Headless Playwright script for codebase integrity testing
 ```
-#   v i s u a l - v e r i f y  
- 
