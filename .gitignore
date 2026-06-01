@@ -15,3 +15,7 @@ Desktop.ini
 *.njsproj
 *.sln
 *.swp
+
+# Build artifacts
+VisualVerify.zip
+
