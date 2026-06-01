@@ -1,0 +1,17 @@
+# Local test dependencies
+scratch/node_modules/
+scratch/package-lock.json
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp

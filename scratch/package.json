@@ -1,0 +1,9 @@
+{
+  "name": "visual-verify-test",
+  "version": "1.0.0",
+  "description": "Test script for VisualVerify extension",
+  "main": "test_headless.js",
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}

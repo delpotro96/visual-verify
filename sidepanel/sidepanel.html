@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VisualVerify Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="logo-area">
+        <img src="../icon.png" class="logo-icon" alt="VisualVerify Logo">
+        <h1 class="logo-text">Visual<span>Verify</span></h1>
+      </div>
+      <span class="version-badge">v1.0</span>
+    </header>
+
+    <!-- Settings Toggle -->
+    <div class="accordion-item" id="settings-accordion">
+      <button class="accordion-trigger" id="settings-btn">
+        <span>⚙️ Configuration & Key</span>
+        <span class="arrow-icon">▼</span>
+      </button>
+      <div class="accordion-content hidden" id="settings-panel">
+        <div class="settings-card">
+          <div class="form-group">
+            <label for="api-key-input">Gemini API Key</label>
+            <div class="input-with-button">
+              <input type="password" id="api-key-input" placeholder="AIzaSy..." autocomplete="off">
+              <button class="btn btn-secondary" id="save-key-btn">Save</button>
+            </div>
+            <p class="help-text">Keys are stored securely in your local browser storage.</p>
+          </div>
+
+          <div class="form-group">
+            <label for="model-select">AI Vision Model</label>
+            <select id="model-select">
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash (Fast & Recommended)</option>
+              <option value="gemini-2.5-pro">Gemini 2.5 Pro (Extremely Detailed)</option>
+              <option value="gemini-3.5-flash">Gemini 3.5 Flash (Ultra Agentic & Fast)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="language-select">Output Language</label>
+            <select id="language-select">
+              <option value="auto">Auto Detect (자동 감지)</option>
+              <option value="ko">Korean (한국어)</option>
+              <option value="en">English (영어)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Workspace -->
+    <main class="workspace">
+      <!-- Mockup Upload Section -->
+      <section class="mockup-section">
+        <div class="section-header">
+          <h2>🎨 Design Mockup (Figma / Image)</h2>
+        </div>
+        <div class="dropzone" id="dropzone">
+          <input type="file" id="mockup-file-input" accept="image/*" style="display: none;">
+          <div class="dropzone-text" id="dropzone-text">
+            <span>📁 Drag & Drop design here</span>
+            <p>or click to select file</p>
+          </div>
+          <div class="mockup-preview-container hidden" id="mockup-preview-container">
+            <img id="mockup-preview" src="" alt="Mockup Preview">
+            <button class="btn-remove-mockup" id="btn-remove-mockup" type="button">✖ Remove Mockup</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Specifications Section -->
+      <section class="spec-section">
+        <div class="section-header">
+          <h2>📝 Verification Specifications (Optional)</h2>
+        </div>
+        <textarea id="spec-input" placeholder="Define functional rules to test. For example:
+- The title must contain the word 'Welcome'.
+- The email input must have placeholder 'name@example.com'.
+- The password input must have a limit of 16 characters."></textarea>
+      </section>
+
+      <!-- Action Button -->
+      <button class="btn btn-primary" id="verify-btn">
+        <span class="btn-text">Audit Active Page</span>
+        <div class="spinner hidden" id="verify-spinner"></div>
+      </button>
+
+      <!-- Status Indicator -->
+      <div class="status-indicator hidden" id="status-box">
+        <p id="status-text">Scanning DOM elements...</p>
+      </div>
+
+      <!-- Report Section -->
+      <section class="report-section hidden" id="report-panel">
+        <div class="section-header">
+          <h2>📊 Audit Report</h2>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button class="btn btn-secondary" id="export-issues-btn" style="padding: 4px 10px; font-size: 11px; height: auto; min-height: 0; display: flex; align-items: center; gap: 4px;">📋 Copy Issues (Markdown)</button>
+            <span class="score-badge" id="report-score">0/0 Passed</span>
+          </div>
+        </div>
+
+        <!-- Captured Image Preview (Thumbnail) -->
+        <div class="preview-card">
+          <button class="preview-trigger" id="toggle-preview-btn">🖼️ View Captured Screenshot</button>
+          <div class="preview-image-container hidden" id="preview-container">
+            <img id="screenshot-preview" src="" alt="Page Screenshot Preview">
+          </div>
+        </div>
+
+        <!-- Results List -->
+        <div class="results-list" id="results-container">
+          <!-- Dynamically populated report cards go here -->
+        </div>
+
+        <!-- Simulations List -->
+        <div class="simulations-section hidden" id="simulations-section" style="margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 20px;">
+          <div class="section-header" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+            <h2 style="font-size: 15px; font-weight: 600; color: var(--primary-accent); display: flex; align-items: center; gap: 6px; margin: 0;">
+              ⚡ Interactive Validation Tests (플러그인 직접 실행 검증)
+            </h2>
+            <button class="btn btn-secondary" id="run-all-sims-btn" style="padding: 4px 10px; font-size: 11px; height: auto; min-height: 0;">Run All Tests</button>
+          </div>
+          <div class="results-list" id="simulations-container">
+            <!-- Dynamically populated simulation cards go here -->
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="sidepanel.js"></script>
+</body>
+</html>
