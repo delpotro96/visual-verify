@@ -41,18 +41,21 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 16px;
-  overflow-y: auto;
+  padding: 16px 16px 0;
+  overflow: hidden;
 }
 
 /* Scrollbar Customization */
-.app-container::-webkit-scrollbar {
+.app-container::-webkit-scrollbar,
+.workspace::-webkit-scrollbar {
   width: 6px;
 }
-.app-container::-webkit-scrollbar-track {
+.app-container::-webkit-scrollbar-track,
+.workspace::-webkit-scrollbar-track {
   background: var(--bg-primary);
 }
-.app-container::-webkit-scrollbar-thumb {
+.app-container::-webkit-scrollbar-thumb,
+.workspace::-webkit-scrollbar-thumb {
   background: var(--bg-tertiary);
   border-radius: 3px;
 }
@@ -110,6 +113,7 @@ body {
   margin-bottom: 16px;
   overflow: hidden;
   box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
 }
 
 .accordion-trigger {
@@ -146,6 +150,8 @@ body {
   padding: 16px;
   border-top: 1px solid var(--border-color);
   background-color: rgba(0, 0, 0, 0.1);
+  max-height: 45vh;
+  overflow-y: auto;
 }
 
 .hidden {
@@ -177,6 +183,7 @@ label {
 }
 
 input[type="password"],
+input[type="text"],
 select,
 textarea {
   flex-grow: 1;
@@ -192,6 +199,7 @@ textarea {
 }
 
 input[type="password"]:focus,
+input[type="text"]:focus,
 select:focus,
 textarea:focus {
   border-color: var(--primary-accent);
@@ -253,6 +261,9 @@ textarea:focus {
   display: flex;
   flex-direction: column;
   flex-grow: 1;
+  overflow-y: auto;
+  min-height: 0; /* flex 자식이 축소 가능하도록 허용 */
+  padding-bottom: 16px;
 }
 
 .mockup-section,
@@ -721,6 +732,182 @@ textarea {
 }
 
 .sim-screenshot-thumb:hover {
+  opacity: 0.85;
+}
+
+/* Input with Eye Toggle Visibility */
+.input-with-toggle {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.input-with-toggle input {
+  padding-right: 40px; /* Leave space for the eye toggle button */
+  width: 100%;
+}
+
+.btn-toggle-visibility {
+  position: absolute;
+  right: 12px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+  user-select: none;
+  outline: none;
+  width: 24px;
+  height: 24px;
+}
+
+.btn-toggle-visibility:hover {
+  color: var(--text-main);
+}
+
+/* Skeleton Loading UI */
+.skeleton {
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.02) !important;
+  border-color: rgba(255, 255, 255, 0.05) !important;
+  box-shadow: none !important;
+}
+
+.skeleton-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.skeleton-line {
+  background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--border-color) 50%, var(--bg-tertiary) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+  border-radius: 4px;
+}
+
+.skeleton-line.title {
+  width: 60%;
+  height: 16px;
+}
+
+.skeleton-line.status {
+  width: 45px;
+  height: 16px;
+  border-radius: 4px;
+}
+
+.skeleton-line.desc {
+  width: 100%;
+  height: 12px;
+  margin-top: 4px;
+}
+
+.skeleton-line.desc.short {
+  width: 85%;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Simulation Logs Extra Actions Buttons */
+.sim-log-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  padding-top: 8px;
+}
+
+.sim-log-btn {
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  font-family: var(--font-family);
+  outline: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sim-log-btn:hover {
+  background-color: var(--border-color);
+  color: var(--primary-accent);
+  border-color: var(--primary-accent);
+}
+
+/* 에러 카드 UI (인라인 에러 표시용) */
+.error-card {
+  background-color: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  border-left: 4px solid var(--danger);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.error-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.error-card-body {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.error-card-body code {
+  background-color: rgba(0, 0, 0, 0.3);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: #f7768e;
+}
+
+.btn-retry {
+  align-self: flex-start;
+  background-color: var(--danger);
+  color: white;
+  border: none;
+  font-family: var(--font-family);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-retry:hover {
   opacity: 0.85;
 }
 
